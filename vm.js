@@ -1,3 +1,7 @@
+const log = require('loglevel')
+log.setLevel('warn') // hide logs
+// log.setLevel('debug') // for debugging
+
 module.exports = class VM {
   /**
    * The interface API is the api the exposed to interfaces. All queries about
@@ -35,9 +39,16 @@ module.exports = class VM {
    * addes an aync operation to the operations queue
    */
   pushOpsQueue (promise, callbackIndex, intefaceCallback) {
+    log.debug('vm.js pushOpsQueue called with callbackIndex:', callbackIndex)
     this._opsQueue = Promise.all([this._opsQueue, promise]).then(values => {
+      log.debug('promise callback got values:', values)
       const result = intefaceCallback(values.pop())
+      log.debug('callbackIndex.toString():', callbackIndex.toString())
+      log.debug('this._instance.exports:', this._instance.exports)
+      log.debug('this._instance.exports[0]:', this._instance.exports['0'])
+      log.debug('calling instance.exports[callbackIndex]...')
       this._instance.exports[callbackIndex.toString()](result)
+      log.debug('instance.exports returned...')
     })
   }
 

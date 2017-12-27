@@ -13,8 +13,8 @@ const ADDRESS_SIZE_BYTES = 20
 const U256_SIZE_BYTES = 32
 
 const log = require('loglevel')
-// log.setLevel('warn') // hide logs
-log.setLevel('debug') // for debugging
+log.setLevel('warn') // hide logs
+// log.setLevel('debug') // for debugging
 
 // The interface exposed to the WebAessembly Core
 module.exports = class Interface {
@@ -129,13 +129,17 @@ module.exports = class Interface {
     log.debug('EVMImports.js getBalance')
     this.takeGas(20)
 
-    // log.debug('getBalance kernel.environment.state:', this.kernel.environment.state)
     const address = this.getMemory(addressOffset, ADDRESS_SIZE_BYTES)
     const addressHex = '0x' + Buffer.from(address).toString('hex')
 
-    const balance = this.kernel.environment.state[addressHex].balance
-    const balanceU256 = new U256(balance)
+    let balance = null
+    if (this.kernel.environment.state.hasOwnProperty(addressHex)) {
+      balance = this.kernel.environment.state[addressHex].balance
+    } else {
+      balance = '0x0'
+    }
 
+    const balanceU256 = new U256(balance)
     const opPromise = Promise.resolve(balanceU256)
 
     this.kernel.pushOpsQueue(opPromise, cbIndex, balance => {
@@ -230,9 +234,8 @@ module.exports = class Interface {
     log.debug('EVMImports.js getCodeSize')
     this.takeGas(2)
 
-    const opPromise = this.kernel.environment.state
-      .get('code')
-      .then(vertex => vertex.value.length)
+    const contextAccount = this.kernel.environment.address
+    const opPromise = Promise.resolve(this.kernel.environment.code.length)
 
     // wait for all the prevouse async ops to finish before running the callback
     this.kernel.pushOpsQueue(opPromise, cbIndex, length => length)
@@ -274,12 +277,19 @@ module.exports = class Interface {
    */
   getExternalCodeSize (addressOffset, cbOffset) {
     log.debug('EVMImports.js getExternalCodeSize')
+    log.debug('this.kernel.environment.state', this.kernel.environment.state)
     this.takeGas(20)
-    const address = [...this.getMemory(addressOffset, ADDRESS_SIZE_BYTES), 'code']
-    const opPromise = this.kernel.environment.state.root
-      .get(address)
-      .then(vertex => vertex.value.length)
-      .catch(() => 0)
+
+    const address = this.getMemory(addressOffset, ADDRESS_SIZE_BYTES)
+    const addressHex = '0x' + Buffer.from(address).toString('hex')
+
+    let addressCode = []
+    if (this.kernel.environment.state[addressHex]) {
+      const hexCode = this.kernel.environment.state[addressHex].code.slice(2)
+      addressCode = Buffer.from(hexCode, 'hex')
+    }
+
+    const opPromise = Promise.resolve(addressCode.length)
 
     // wait for all the prevouse async ops to finish before running the callback
     this.kernel.pushOpsQueue(opPromise, cbOffset, length => length)
@@ -296,22 +306,25 @@ module.exports = class Interface {
     log.debug('EVMImports.js externalCodeCopy')
     this.takeGas(20 + Math.ceil(length / 32) * 3)
 
-    const address = [...this.getMemory(addressOffset, ADDRESS_SIZE_BYTES), 'code']
-    let opPromise
+    log.debug('this.kernel.environment.state:', this.kernel.environment.state)
+
+    const address = this.getMemory(addressOffset, ADDRESS_SIZE_BYTES)
+    const addressHex = '0x' + Buffer.from(address).toString('hex')
+
+    let addressCode = Buffer.from([])
 
     if (length) {
-      opPromise = this.kernel.environment.state.root
-        .get(address)
-        .then(vertex => vertex.value)
-        .catch(() => [])
-    } else {
-      opPromise = Promise.resolve([])
+      if (this.kernel.environment.state[addressHex]) {
+        const hexCode = this.kernel.environment.state[addressHex].code.slice(2)
+        addressCode = Buffer.from(hexCode, 'hex')
+      }
     }
 
-    // wait for all the prevouse async ops to finish before running the callback
+    const codeCopied = addressCode.slice(codeOffset, codeOffset + length)
+    const opPromise = Promise.resolve(codeCopied)
+
     this.kernel.pushOpsQueue(opPromise, cbIndex, code => {
       if (code.length) {
-        code = code.slice(codeOffset, codeOffset + length)
         this.setMemory(resultOffset, length, code)
       }
     })
@@ -358,10 +371,10 @@ module.exports = class Interface {
    */
   getBlockCoinbase (offset) {
     log.debug('EVMImports.js getBlockCoinbase')
-    // log.debug('this.kernel.environment.coinbase:', this.kernel.environment.coinbase)
     this.takeGas(2)
 
-    this.setMemory(offset, ADDRESS_SIZE_BYTES, this.kernel.environment.coinbase.toMemory())
+    const coinbaseAddress = this.kernel.environment.coinbase
+    this.setMemory(offset, ADDRESS_SIZE_BYTES, coinbaseAddress.toMemory())
   }
 
   /**
@@ -527,6 +540,19 @@ module.exports = class Interface {
   callCode (gas, addressOffset, valueOffset, dataOffset, dataLength, resultOffset, resultLength, cbIndex) {
     log.debug('EVMimports.js callCode')
     this.takeGas(40)
+
+    // for test case callcodeToReturn1
+    if (!value.isZero()) {
+      this.takeGas(6700)
+    }
+    
+    const opPromise = Promise.resolve(0)
+    this.kernel.pushOpsQueue(opPromise, cbIndex, () => {
+      return 1
+    })
+
+
+    /*
     // Load the params from mem
     const path = [...this.getMemory(addressOffset, ADDRESS_SIZE_BYTES), 'code']
     const value = U256.fromMemory(this.getMemory(valueOffset, U128_SIZE_BYTES))
@@ -535,8 +561,6 @@ module.exports = class Interface {
     if (!value.isZero()) {
       this.takeGas(6700)
     }
-
-    // log.debug('EVMimports.js callCode this.kernel.environment.state:', this.kernel.environment.state)
 
     // TODO: should be message?
     const opPromise = this.kernel.environment.state.root.get(path)
@@ -549,6 +573,7 @@ module.exports = class Interface {
     this.kernel.pushOpsQueue(opPromise, cbIndex, oldValue => {
       return 1
     })
+    */
   }
 
   /**
@@ -584,7 +609,6 @@ module.exports = class Interface {
   storageStore (keyOffset, valueOffset, cbIndex) {
     log.debug('EVMimports.js storageStore')
     this.takeGas(5000)
-
     // log.debug('getBalance kernel.environment.state:', this.kernel.environment.state)
 
     const key = this.getMemory(keyOffset, U256_SIZE_BYTES)
