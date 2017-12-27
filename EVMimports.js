@@ -13,8 +13,8 @@ const ADDRESS_SIZE_BYTES = 20
 const U256_SIZE_BYTES = 32
 
 const log = require('loglevel')
-log.setLevel('warn') // hide logs
-// log.setLevel('debug') // for debugging
+// log.setLevel('warn') // hide logs
+log.setLevel('debug') // for debugging
 
 // The interface exposed to the WebAessembly Core
 module.exports = class Interface {
@@ -251,20 +251,22 @@ module.exports = class Interface {
     log.debug('EVMimports.js codeCopy')
     this.takeGas(3 + Math.ceil(length / 32) * 3)
 
-    let opPromise
+    const contextAccount = this.kernel.environment.address
+    let addressCode = Buffer.from([])
+    let codeCopied = Buffer.from([])
 
     if (length) {
-      opPromise = this.kernel.environment.state
-        .get('code')
-        .then(vertex => vertex.value)
-    } else {
-      opPromise = Promise.resolve([])
+      if (this.kernel.environment.state[contextAccount]) {
+        const hexCode = this.kernel.environment.state[contextAccount].code.slice(2)
+        addressCode = Buffer.from(hexCode, 'hex')
+        codeCopied = addressCode.slice(codeOffset, codeOffset + length)
+      }
     }
 
-    // wait for all the prevouse async ops to finish before running the callback
+    const opPromise = Promise.resolve(codeCopied)
+
     this.kernel.pushOpsQueue(opPromise, cbIndex, code => {
       if (code.length) {
-        code = code.slice(codeOffset, codeOffset + length)
         this.setMemory(resultOffset, length, code)
       }
     })
