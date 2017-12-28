@@ -279,7 +279,7 @@ module.exports = class Interface {
    */
   getExternalCodeSize (addressOffset, cbOffset) {
     log.debug('EVMImports.js getExternalCodeSize')
-    log.debug('this.kernel.environment.state', this.kernel.environment.state)
+    log.trace('this.kernel.environment.state', this.kernel.environment.state)
     this.takeGas(20)
 
     const address = this.getMemory(addressOffset, ADDRESS_SIZE_BYTES)
@@ -308,7 +308,7 @@ module.exports = class Interface {
     log.debug('EVMImports.js externalCodeCopy')
     this.takeGas(20 + Math.ceil(length / 32) * 3)
 
-    log.debug('this.kernel.environment.state:', this.kernel.environment.state)
+    log.trace('this.kernel.environment.state:', this.kernel.environment.state)
 
     const address = this.getMemory(addressOffset, ADDRESS_SIZE_BYTES)
     const addressHex = '0x' + Buffer.from(address).toString('hex')
@@ -474,6 +474,7 @@ module.exports = class Interface {
     log.debug('EVMImports.js create')
     this.takeGas(32000)
 
+    /*
     const value = U256.fromMemory(this.getMemory(valueOffset, U128_SIZE_BYTES))
     // if (length) {
     //   const code = this.getMemory(dataOffset, length).slice(0)
@@ -491,6 +492,22 @@ module.exports = class Interface {
     // wait for all the prevouse async ops to finish before running the callback
     this.kernel.pushOpsQueue(opPromise, cbIndex, address => {
       this.setMemory(resultOffset, ADDRESS_SIZE_BYTES, address)
+    })
+    */
+
+    const value = U256.fromMemory(this.getMemory(valueOffset, U128_SIZE_BYTES))
+
+    let opPromise
+
+    if (value.gt(this.kernel.environment.value)) {
+      opPromise = Promise.resolve(Buffer.alloc(20))
+    } else {
+      // TODO: actually run the code
+      opPromise = Promise.resolve(ethUtil.generateAddress(this.kernel.environment.address, this.kernel.environment.nonce))
+    }
+
+    this.kernel.pushOpsQueue(opPromise, cbIndex, createdAddress => {
+      this.setMemory(resultOffset, ADDRESS_SIZE_BYTES, createdAddress)
     })
   }
 
@@ -543,16 +560,18 @@ module.exports = class Interface {
     log.debug('EVMimports.js callCode')
     this.takeGas(40)
 
+    const value = U256.fromMemory(this.getMemory(valueOffset, U128_SIZE_BYTES))
+
     // for test case callcodeToReturn1
     if (!value.isZero()) {
       this.takeGas(6700)
     }
-    
+
     const opPromise = Promise.resolve(0)
     this.kernel.pushOpsQueue(opPromise, cbIndex, () => {
-      return 1
+      // TODO: actually execute the code at the address
+      return 1 // return 1 for callcodeToReturn1
     })
-
 
     /*
     // Load the params from mem
